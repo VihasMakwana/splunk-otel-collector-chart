@@ -30,43 +30,17 @@ spec:
         app: splunk-otel-collector
         release: default
       annotations:
-        checksum/config: c72a5536ce2ddd9792af9317f7d0f7b61e52a9f46c9e1819f79075f3da4c0311
+        checksum/config: cac82800ded432062648f452c76ef29b6d1032da473a2a5dd4e6e77cddf5359e
         kubectl.kubernetes.io/default-container: otel-collector
     spec:
-      hostNetwork: true
       dnsPolicy: ClusterFirstWithHostNet
       serviceAccountName: default-splunk-otel-collector
       nodeSelector:
-        kubernetes.io/os: linux
+        kubernetes.io/os: windows
       tolerations:
         
         - effect: NoSchedule
           key: node-role.kubernetes.io/master
-      initContainers:
-        - name: prepare-fluentd-config
-          image: splunk/fluentd-hec:1.2.8
-          imagePullPolicy: IfNotPresent
-          command: [ "sh", "-c"]
-          securityContext:
-            runAsUser: 0
-          args:
-            - cp /fluentd/etc/common/* /fluentd/etc/;
-              if [ "${LOG_FORMAT_TYPE}" == "json" ] || [ "$(ls /var/lib/docker/containers/*/*json.log 2>/dev/null | wc -l)" != "0" ]; then
-                  cp /fluentd/etc/json/* /fluentd/etc/;
-              fi;
-          env:
-            - name: LOG_FORMAT_TYPE
-              value: ""
-          volumeMounts:
-            - name: varlogdest
-              mountPath: /var/lib/docker/containers
-              readOnly: true
-            - name: fluentd-config
-              mountPath: /fluentd/etc
-            - name: fluentd-config-common
-              mountPath: /fluentd/etc/common
-            - name: fluentd-config-json
-              mountPath: /fluentd/etc/json
       containers:
       - name: fluentd
         image: splunk/fluentd-hec:1.2.8
@@ -109,12 +83,22 @@ spec:
           mountPath: /tmp
       - name: otel-collector
         command:
-        - /otelcol
-        - --config=/conf/relay.yaml
+        - powershell.exe
+        - -command
+        - .\otelcol.exe
+        - --config=C:\\conf\relay.yaml
         ports:
         - name: fluentforward
           containerPort: 8006
           hostPort: 8006
+          protocol: TCP
+        - name: jaeger-grpc
+          containerPort: 14250
+          hostPort: 14250
+          protocol: TCP
+        - name: jaeger-thrift
+          containerPort: 14268
+          hostPort: 14268
           protocol: TCP
         - name: otlp
           containerPort: 4317
@@ -125,6 +109,18 @@ spec:
           protocol: TCP
         - name: otlp-http-old
           containerPort: 55681
+          protocol: TCP
+        - name: sfx-forwarder
+          containerPort: 9080
+          hostPort: 9080
+          protocol: TCP
+        - name: signalfx
+          containerPort: 9943
+          hostPort: 9943
+          protocol: TCP
+        - name: zipkin
+          containerPort: 9411
+          hostPort: 9411
           protocol: TCP
         image: quay.io/signalfx/splunk-otel-collector:0.70.0
         imagePullPolicy: IfNotPresent
@@ -162,6 +158,19 @@ spec:
               secretKeyRef:
                 name: splunk-otel-collector
                 key: splunk_observability_access_token
+          # Env variables for host metrics receiver
+          - name: HOST_PROC
+            value: C:\hostfs\proc
+          - name: HOST_SYS
+            value: C:\hostfs\sys
+          - name: HOST_ETC
+            value: C:\hostfs\etc
+          - name: HOST_VAR
+            value: C:\hostfs\var
+          - name: HOST_RUN
+            value: C:\hostfs\run
+          - name: HOST_DEV
+            value: C:\hostfs\dev
 
         readinessProbe:
           httpGet:
@@ -176,8 +185,11 @@ spec:
             cpu: 200m
             memory: 500Mi
         volumeMounts:
-        - mountPath: /conf
+        - mountPath: C:\conf
           name: otel-configmap
+        - mountPath: "C:\\hostfs"
+          name: hostfs
+          readOnly: true
       terminationGracePeriodSeconds: 600
       volumes:
       - name: varlog
@@ -202,6 +214,9 @@ spec:
           name: default-splunk-otel-collector-fluentd-json
       - name: tmp
         emptyDir: {}
+      - name: hostfs
+        hostPath:
+          path: "C:\\"
       - name: otel-configmap
         configMap:
           name: default-splunk-otel-collector-otel-agent
