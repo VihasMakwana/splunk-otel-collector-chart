@@ -61,6 +61,21 @@ spec:
       securityContext:
         {{ toYaml $gateway.securityContext | nindent 8 }}
       {{- end }}
+      {{- if (eq (include "splunk-otel-collector.persistentQueueEnabled" .) "true") }}
+      initContainers:
+        - name: patch-log-dirs
+          image: {{ template "splunk-otel-collector.image.initPatchLogDirs" . }}
+          imagePullPolicy: {{ .Values.image.initPatchLogDirs.pullPolicy }}
+          command: ['sh', '-c', '
+          mkdir -p {{ .Values.splunkPlatform.sendingQueue.persistentQueueEnabled.storagePath }}/gateway;
+          chown -Rv {{ $gateway.securityContext.runAsUser | default 999 }}:{{ $gateway.securityContext.runAsGroup | default 999 }} {{ .Values.splunkPlatform.sendingQueue.persistentQueueEnabled.storagePath }}/gateway;
+          chmod -v g+rwxs {{ .Values.splunkPlatform.sendingQueue.persistentQueueEnabled.storagePath }}/gateway;']
+          securityContext:
+            runAsUser: 0
+          volumeMounts:
+            - name: persistent-queue
+              mountPath: {{ .Values.splunkPlatform.sendingQueue.persistentQueueEnabled.storagePath }}/gateway
+      {{- end }}
       containers:
       - name: otel-collector
         command:
