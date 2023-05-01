@@ -68,7 +68,11 @@ receivers:
     watch_observers: [k8s_observer]
     receivers:
       {{- if or .Values.autodetect.prometheus .Values.autodetect.istio }}
+      {{- if .Values.featureGates.useLightPrometheusReceiver }}
+      lightprometheus:
+      {{- else }}
       prometheus_simple:
+      {{- end }}
         {{- if .Values.autodetect.prometheus }}
         # Enable prometheus scraping for pods with standard prometheus annotations
         rule: type == "pod" && annotations["prometheus.io/scrape"] == "true"
@@ -77,8 +81,12 @@ receivers:
         rule: type == "pod" && annotations["prometheus.io/scrape"] == "true" && "istio.io/rev" in labels
         {{- end }}
         config:
+          {{- if .Values.featureGates.useLightPrometheusReceiver }}
+          endpoint: 'http://`endpoint`:`"prometheus.io/port" in annotations ? annotations["prometheus.io/port"] : 9090``"prometheus.io/path" in annotations ? annotations["prometheus.io/path"] : "/metrics"`'
+          {{- else }}
           metrics_path: '`"prometheus.io/path" in annotations ? annotations["prometheus.io/path"] : "/metrics"`'
           endpoint: '`endpoint`:`"prometheus.io/port" in annotations ? annotations["prometheus.io/port"] : 9090`'
+          {{- end }}
       {{- end }}
 
       # Receivers for collecting k8s control plane metrics.
@@ -384,6 +392,7 @@ receivers:
         source_identifier: resource["com.splunk.source"]
         combine_field: attributes.log
         is_first_entry: '(attributes.log) matches {{ .firstEntryRegex | quote }}'
+        max_log_size: {{ $.Values.logsCollection.containers.maxRecombineLogSize }}
       {{- end }}
       {{- end }}
       # Clean up log record
